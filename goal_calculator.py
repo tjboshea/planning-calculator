@@ -13,6 +13,17 @@ from datetime import date
 from scipy import stats
 from scipy.stats import norm
 
+# Set the page layout to wide
+st.set_page_config(layout="wide")
+
+# Initialize session state
+if 'exp_df' not in st.session_state:
+    st.session_state['exp_df'] = pd.DataFrame(columns=['Amount', 'Months Ahead'])
+if 'alloc_df' not in st.session_state:
+    st.session_state['alloc_df'] = pd.DataFrame(columns=['Asset', 'Weight (%)'])
+    
+# st.write(st.session_state)  # ALLOWS USER TO VIEW SESSION STATE, COMMENT OUT WHEN DONE TESTING
+
 # Set up the Streamlit app
 st.title('Financial Goal Planner')
 
@@ -23,7 +34,7 @@ st.sidebar.title("User inputs:")
 # determine if retirement is in growth or withdrawal stage
 save_or_withdraw = st.sidebar.selectbox('Planning Stage', ['Pre-retirement', 'Retirement'])
 
-goal_years = st.sidebar.number_input('Goal Years', min_value=1, step=1, value=100)
+goal_years = st.sidebar.number_input('Goal Years', min_value=1, step=1, value=15)
 goal = st.sidebar.number_input('Goal Amount', min_value=0, step=1, value=5000000)
 current_savings = st.sidebar.number_input('Current Savings', min_value=0, step=1, value=1250000)
 current_house_income = st.sidebar.number_input('Current House Income', min_value=0, step=1, value=100000)
@@ -39,25 +50,25 @@ else:
 # Windfall or Expense inputs
 st.sidebar.header("One-off Expense or Windfall")
 
-# initialize default values
-exp_df = pd.DataFrame(columns=['Amount', 'Years Ahead'])
-
 # dropdown for asset selection 
-amount = st.sidebar.number_input('Amount', min_value=-1000000000, step=1, value=0)
-years_ahead = st.sidebar.number_input('Years Ahead', min_value=1, value=1, max_value=goal_years)
+amount = st.sidebar.number_input('Amount', min_value=-100000000000, step=1, value=0)
+months_ahead = st.sidebar.number_input('Months Ahead', min_value=1, value=1, max_value=goal_years)
 
 # Add row button
 if st.sidebar.button('Add Expense or Windfall'):
-    new_row = {'Amount': amount, 'Years Ahead': years_ahead}
-    exp_df = exp_df.append(new_row, ignore_index=True)
+    new_row = pd.DataFrame([{'Amount': amount, 'Months Ahead': months_ahead}])
+    st.session_state['exp_df'] = pd.concat([st.session_state['exp_df'] , new_row])
 
  # Delete row button
-if not exp_df.empty:
-    delete_index = st.sidebar.selectbox('Delete row', exp_df.index)
+if not st.session_state['exp_df'].empty:
+    delete_index = st.sidebar.selectbox('Delete row', st.session_state['exp_df']['Amount'])
     if st.sidebar.button('Delete row'):
-        alloc_df = exp_df.drop(delete_index)
+        st.session_state['exp_df'] = st.session_state['exp_df'].loc[st.session_state['exp_df']['Amount']!=delete_index]
 
-lqd_windfall_dict = exp_df.set_index('Amount')['Years Ahead'].to_dict()
+lqd_windfall_dict = st.session_state['exp_df'].set_index('Amount')['Months Ahead'].to_dict()
+
+# Display DataFrame in the sidebar
+st.sidebar.write(st.session_state.exp_df.set_index('Amount'))
 
 # ---------------------------------------------------------------------------------------------
 # import python functions
@@ -118,34 +129,35 @@ df = df.set_index('date')
 # --------------------------------------------------------------------------------------------------------
 # Establish user inputs for asset allocation
 
-# initialize default values
-alloc_df = pd.DataFrame(columns=['Asset', 'Weight (%)'])
-
 # dropdown for asset selection 
 asset_options = list(df.columns)
 selected_asset = st.selectbox('Select Asset', asset_options)
 
 # Number input for weight
-weight = st.number_input('Enter Weight (%)', min_value=0.0, max_value=100.0, step=0.25, value=100.0)
+weight = st.number_input('Enter Weight (%)', min_value=0.0, max_value=100.0, step=0.01, value=100.0)
 
 # Add row button
 if st.button('Add Asset'):
-    new_row = {'Asset': selected_asset, 'Weight (%)': weight}
-    alloc_df = alloc_df.append(new_row, ignore_index=True)
+    new_row = pd.DataFrame([{'Asset': selected_asset, 'Weight (%)': weight}])
+    st.session_state['alloc_df'] = pd.concat([st.session_state['alloc_df'], new_row])
 
  # Delete row button
-if not alloc_df.empty:
-    delete_index = st.selectbox('Delete Asset', alloc_df.index)
+if not st.session_state['alloc_df'].empty:
+    delete_index = st.selectbox('Delete Asset', st.session_state['alloc_df']['Asset'])
     if st.button('Delete Asset'):
-        alloc_df = alloc_df.drop(delete_index)
+         st.session_state['alloc_df'] = st.session_state['alloc_df'].loc[st.session_state['alloc_df']['Asset']!=delete_index]
 
-total_weight = alloc_df['Weight (%)'].sum()
-st.write(f'Weight must equal 100%. Weight= {total_weight}')
+
+total_weight = st.session_state['alloc_df']['Weight (%)'].sum()
+if total_weight == 100:
+    st.write(f"Portfolio Weight = 100%")
+else:
+    st.write(f'Portfolio weight must equal 100%. Remaining weight =  {100-total_weight}')
 
 # display DataFrame
-st.write(alloc_df)
+st.write(st.session_state['alloc_df'].set_index('Asset'))
 
-goal_dict = alloc_df.set_index('Asset')['Weight (%)'].to_dict()
+goal_dict = st.session_state['alloc_df'].set_index('Asset')['Weight (%)'].to_dict()
 
 #---------------------------------------------------------------------------------------------------------
 # Function to run retirement simulations
@@ -499,12 +511,15 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
 
     return (success, stat_df_summary, total_dollars, stat_df, all_sims, money_df ) # all_holdings, init_port_stats)
 
-
 # --------------------------------------------------------------------------------------------------------------------
 # Generate output from sim_retirement()
-retire = sim_retirement(stage='pre-retirement', df=df, factdb=factdb, goal_dict=goal_dict,
-                        goal_years=goal_years, goal=goal, current_savings=current_savings, 
-                        current_house_income=current_house_income, income_growth=income_growth, 
-                        savings_rate=savings_rate, withdrawal_rate=withdrawal_rate,
-                        lqd_windfall_dict = lqd_windfall_dict)
+
+if st.button('Run Simulation'):
+
+    retire = sim_retirement(stage='pre-retirement', df=df, factdb=factdb, goal_dict=goal_dict,
+                            goal_years=goal_years, goal=goal, current_savings=current_savings, 
+                            current_house_income=current_house_income, income_growth=income_growth, 
+                            savings_rate=savings_rate, withdrawal_rate=withdrawal_rate,
+                            lqd_windfall_dict = lqd_windfall_dict)
+    
                                                                                 
