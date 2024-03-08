@@ -14,6 +14,7 @@ from scipy import stats
 from scipy.stats import norm
 
 import plotly.graph_objects as go
+import plotly.figure_factory as ff
 
 # ---------------------------------------------------------------------------------------------
 # import python functions
@@ -168,7 +169,7 @@ st.sidebar.write(st.session_state.exp_df.set_index('Amount'))
 #---------------------------------------------------------------------------------------------------------
 # Function to run retirement simulations
 
-def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_dict, simulations=100, goal_years=15,
+def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_dict, simulations=25, goal_years=15,
                    goal=5000000, current_savings=0, current_house_income=0,
                   income_growth=0.03, savings_rate=0.0, withdrawal_rate=0.0, lqd_windfall_dict = {1:0}):
     """
@@ -553,6 +554,11 @@ def create_gauge(value):
     return fig
 
 def create_line_chart(total_dollars, goal):
+    # Update function to improve the visuals y-axis
+    # consider two standard deviations of all the end total_dollars[-1]
+
+
+
     # Calculate median
     line_df = total_dollars.copy()
     line_df['Median Portfolio Value'] = line_df.median(axis=1)
@@ -570,9 +576,32 @@ def create_line_chart(total_dollars, goal):
     plt.xlabel('Date')
     plt.ylabel('Portfolio Value ($)')
     plt.title('Retirement Possibilities')
-    # plt.grid(True)
+    
+        # Create custom legend
+    custom_legend = [
+        plt.Line2D([0], [0], color='black', lw=1, label='Median Outcome'),
+        plt.Line2D([0], [0], color='lightgreen', lw=1, label='Successful Outcome'),
+        plt.Line2D([0], [0], color='lightcoral', lw=1, label='Unsuccessful Outcome'),
+        plt.Line2D([0], [0], color='gray', lw=1, linestyle='--', label='Investment Goal')
+    ]
+    plt.legend(handles=custom_legend)
 
     return plt
+
+def plot_distribution(stat_df, stat, bin_num=15):
+
+
+    plt.figure(figsize=(10,6), tight_layout=True)
+
+    arr = stat_df.loc[stat,:].to_numpy() * 100
+
+    fig, ax = plt.subplots()
+    ax.hist(arr, bins=bin_num)
+
+    plt.xlabel('Max Drawdown (%)')
+    plt.ylabel('# of Occurences')
+
+    return fig
 
 # --------------------------------------------------------------------------------------------------------------------
 # Generate output from sim_retirement()
@@ -593,5 +622,7 @@ if st.button('Run Simulation'):
     line_chart = create_line_chart(retire[2], goal)
     st.pyplot(line_chart)
 
-    
+    st.title('Distribution of Maximum Drawdowns')
+    dist_plot = plot_distribution(retire[3], 'Max Drawdown', bin_num=20)
+    st.pyplot(dist_plot, use_container_width=True)
                                                                                 
