@@ -13,62 +13,7 @@ from datetime import date
 from scipy import stats
 from scipy.stats import norm
 
-# Set the page layout to wide
-st.set_page_config(layout="wide")
-
-# Initialize session state
-if 'exp_df' not in st.session_state:
-    st.session_state['exp_df'] = pd.DataFrame(columns=['Amount', 'Months Ahead'])
-if 'alloc_df' not in st.session_state:
-    st.session_state['alloc_df'] = pd.DataFrame(columns=['Asset', 'Weight (%)'])
-    
-# st.write(st.session_state)  # ALLOWS USER TO VIEW SESSION STATE, COMMENT OUT WHEN DONE TESTING
-
-# Set up the Streamlit app
-st.title('Financial Goal Planner')
-
-#----------------------------------------------------------------------------------------------
-# Establish user inputs
-st.sidebar.title("User inputs:")
-
-# determine if retirement is in growth or withdrawal stage
-save_or_withdraw = st.sidebar.selectbox('Planning Stage', ['Pre-retirement', 'Retirement'])
-
-goal_years = st.sidebar.number_input('Goal Years', min_value=1, step=1, value=15)
-goal = st.sidebar.number_input('Goal Amount', min_value=0, step=1, value=5000000)
-current_savings = st.sidebar.number_input('Current Savings', min_value=0, step=1, value=1250000)
-current_house_income = st.sidebar.number_input('Current House Income', min_value=0, step=1, value=100000)
-income_growth = st.sidebar.number_input('Income Growth Rate (%)', min_value=0.0, step=0.5, value=3.0)
-savings_rate = st.sidebar.slider('Savings Rate (%)', min_value=0.0, max_value=100.0, step=1.0, value=20.0)
-
-if save_or_withdraw == "Retirement":
-    withdrawal_rate = st.sidebar.slider('Withdrawal Rate (%)', min_value=0.0, max_value=100.0, step=1.0, value=1.0)
-else:
-    withdrawal_rate = 0
-
-#--------------------------------------------------------------------------------------------------------------------------
-# Windfall or Expense inputs
-st.sidebar.header("One-off Expense or Windfall")
-
-# dropdown for asset selection 
-amount = st.sidebar.number_input('Amount', min_value=-100000000000, step=1, value=0)
-months_ahead = st.sidebar.number_input('Months Ahead', min_value=1, value=1, max_value=goal_years)
-
-# Add row button
-if st.sidebar.button('Add Expense or Windfall'):
-    new_row = pd.DataFrame([{'Amount': amount, 'Months Ahead': months_ahead}])
-    st.session_state['exp_df'] = pd.concat([st.session_state['exp_df'] , new_row])
-
- # Delete row button
-if not st.session_state['exp_df'].empty:
-    delete_index = st.sidebar.selectbox('Delete row', st.session_state['exp_df']['Amount'])
-    if st.sidebar.button('Delete row'):
-        st.session_state['exp_df'] = st.session_state['exp_df'].loc[st.session_state['exp_df']['Amount']!=delete_index]
-
-lqd_windfall_dict = st.session_state['exp_df'].set_index('Amount')['Months Ahead'].to_dict()
-
-# Display DataFrame in the sidebar
-st.sidebar.write(st.session_state.exp_df.set_index('Amount'))
+import plotly.graph_objects as go
 
 # ---------------------------------------------------------------------------------------------
 # import python functions
@@ -126,43 +71,104 @@ df = pd.read_csv(idx_url)
 df['date'] = pd.to_datetime(df['date'])
 df = df.set_index('date')
 
+# Set the page layout to wide
+st.set_page_config(layout="wide")
+
+# Initialize session state
+if 'exp_df' not in st.session_state:
+    st.session_state['exp_df'] = pd.DataFrame(columns=['Amount', 'Months Ahead'])
+if 'alloc_df' not in st.session_state:
+    st.session_state['alloc_df'] = pd.DataFrame(columns=['Asset', 'Weight (%)'])
+    
+# st.write(st.session_state)  # ALLOWS USER TO VIEW SESSION STATE, COMMENT OUT WHEN DONE TESTING
+
+# Set up the Streamlit app
+st.title('Financial Goal Planner')
+
 # --------------------------------------------------------------------------------------------------------
 # Establish user inputs for asset allocation
 
+# Establish user inputs
+st.sidebar.title("Enter Asset Allocation:")
+
 # dropdown for asset selection 
 asset_options = list(df.columns)
-selected_asset = st.selectbox('Select Asset', asset_options)
+selected_asset = st.sidebar.selectbox('Select Asset', asset_options)
 
 # Number input for weight
-weight = st.number_input('Enter Weight (%)', min_value=0.0, max_value=100.0, step=0.01, value=100.0)
+weight = st.sidebar.number_input('Enter Weight (%)', min_value=0.0, max_value=100.0, step=0.01, value=100.0)
 
 # Add row button
-if st.button('Add Asset'):
+if st.sidebar.button('Add Asset'):
     new_row = pd.DataFrame([{'Asset': selected_asset, 'Weight (%)': weight}])
     st.session_state['alloc_df'] = pd.concat([st.session_state['alloc_df'], new_row])
 
  # Delete row button
 if not st.session_state['alloc_df'].empty:
-    delete_index = st.selectbox('Delete Asset', st.session_state['alloc_df']['Asset'])
-    if st.button('Delete Asset'):
+    delete_index = st.sidebar.selectbox('Delete Asset', st.session_state['alloc_df']['Asset'])
+    if st.sidebar.button('Delete Asset'):
          st.session_state['alloc_df'] = st.session_state['alloc_df'].loc[st.session_state['alloc_df']['Asset']!=delete_index]
 
 
 total_weight = st.session_state['alloc_df']['Weight (%)'].sum()
 if total_weight == 100:
-    st.write(f"Portfolio Weight = 100%")
+    st.sidebar.write(f"Portfolio Weight = 100%")
 else:
-    st.write(f'Portfolio weight must equal 100%. Remaining weight =  {100-total_weight}')
+    st.sidebar.write(f'Portfolio weight must equal 100%. Remaining weight =  {100-total_weight}')
 
 # display DataFrame
-st.write(st.session_state['alloc_df'].set_index('Asset'))
+st.sidebar.write(st.session_state['alloc_df'].set_index('Asset'))
 
 goal_dict = st.session_state['alloc_df'].set_index('Asset')['Weight (%)'].to_dict()
+
+#----------------------------------------------------------------------------------------------
+# Establish user inputs
+st.sidebar.title("User inputs:")
+
+# determine if retirement is in growth or withdrawal stage
+save_or_withdraw = st.sidebar.selectbox('Planning Stage', ['Pre-retirement', 'Retirement'])
+
+goal_years = st.sidebar.number_input('Goal Years', min_value=1, step=1, value=15)
+goal = st.sidebar.number_input('Goal Amount', min_value=0, step=1, value=5000000)
+current_savings = st.sidebar.number_input('Current Savings', min_value=0, step=1, value=1250000)
+current_house_income = st.sidebar.number_input('Current House Income', min_value=0, step=1, value=100000)
+income_growth = st.sidebar.number_input('Income Growth Rate (%)', min_value=0.0, step=0.25, value=3.0, max_value=100.0)
+savings_rate = st.sidebar.slider('Savings Rate (%)', min_value=0.0, max_value=100.0, step=1.0, value=20.0)
+
+if save_or_withdraw == "Retirement":
+    withdrawal_rate = st.sidebar.slider('Withdrawal Rate (%)', min_value=0.0, max_value=100.0, step=1.0, value=1.0)
+else:
+    withdrawal_rate = 0
+
+#--------------------------------------------------------------------------------------------------------------------------
+# Windfall or Expense inputs
+st.sidebar.header("One-off Expense or Windfall")
+
+# dropdown for asset selection 
+amount = st.sidebar.number_input('Amount', min_value=-100000000000, step=1, value=0)
+months_ahead = st.sidebar.number_input('Months Ahead', min_value=1, value=24, max_value=goal_years*12)
+
+# Add row button
+if st.sidebar.button('Add Expense or Windfall'):
+    new_row = pd.DataFrame([{'Amount': amount, 'Months Ahead': months_ahead}])
+    st.session_state['exp_df'] = pd.concat([st.session_state['exp_df'] , new_row])
+
+ # Delete row button
+if not st.session_state['exp_df'].empty:
+    delete_index = st.sidebar.selectbox('Delete row', st.session_state['exp_df']['Amount'])
+    if st.sidebar.button('Delete row'):
+        st.session_state['exp_df'] = st.session_state['exp_df'].loc[st.session_state['exp_df']['Amount']!=delete_index]
+
+lqd_windfall_dict = st.session_state['exp_df'].set_index('Months Ahead')['Amount'].to_dict()
+
+# Display DataFrame in the sidebar
+st.sidebar.write(st.session_state.exp_df.set_index('Amount'))
+# st.sidebar.write(lqd_windfall_dict)
 
 #---------------------------------------------------------------------------------------------------------
 # Function to run retirement simulations
 
-def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_dict, simulations=10, goal_years=15,
+def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_dict, simulations=100, goal_years=15,
                    goal=5000000, current_savings=0, current_house_income=0,
                   income_growth=0.03, savings_rate=0.0, withdrawal_rate=0.0, lqd_windfall_dict = {1:0}):
     """
@@ -196,7 +202,8 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
     - init_port_stats (DataFrame): DataFrame containing initial portfolio statistics.
     """
     # update parameters from streamlit to use in our function
-            
+    
+    income_growth = income_growth / 100
     savings_rate = savings_rate / 100 / 12
     withdrawal_rate = withdrawal_rate / 100 / 12
         
@@ -212,6 +219,7 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
     sim_index = sim_index[:total_periods] # reduce sim_index to the total amount of goal years
     
     # Update goal_dict into friendly inputs-----------------------------------------------------------------
+    goal_dict = {k:v/100 for k,v in goal_dict.items()}
     goal_df = pd.DataFrame.from_dict(goal_dict, orient='index', columns =['weight'])
     a_list = [k for k in goal_dict.keys()]
     
@@ -306,7 +314,7 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
 #         init_port_stats = summary.copy()
         
     # Create dataframe of cash flow growth-------------------------------------------------------------------
-    money_idx = [i for i in range(1, goal_years*12+1)]
+    money_idx = [i for i in range(1, total_periods+1)]
 
     savings_data = []
 
@@ -315,6 +323,7 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
     for year in range(goal_years):
         for month in range(1,13):
             income_for_month = monthly_income * ((1+income_growth)**year)
+            print(income_for_month)
             savings_data.append([year+1, month, income_for_month])
 
     money_df = pd.DataFrame(savings_data, columns=['year', 'month', 'income'], index=money_idx)
@@ -323,7 +332,7 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
     money_df['expense_or_windfall'] = money_df.index.map(lambda x: lqd_windfall_dict.get(x,0))
     money_df['cash_flow'] = 0
 
-    for i in range(1, goal_years*12+1):
+    for i in range(1, total_periods+1):
         if i == 1:
             money_df.loc[i,'cash_flow'] = money_df.loc[i, ['income', '$ start', 'expense_or_windfall']].sum()
         else:
@@ -462,13 +471,15 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
                                          + money_df.loc[row+1,['expense_or_windfall']][0] -
                                         ( total_dollars.loc[prev_idx,:] * withdrawal_rate ))* (1+all_sims.loc[idx,:])
         prev_idx = idx
+
+    total_dollars.loc[df.index[-1], :] = current_savings
+    total_dollars = total_dollars.sort_index()
     
     # Cumulative return of each simulation only considering returns -----------------------------------------------------
     all_sims_cum = (1+all_sims).cumprod()
     all_sims_cum.loc[df.index[-1],:] = 1
     all_sims_cum = all_sims_cum.sort_index()
     all_sims_cum = all_sims_cum / all_sims_cum.iloc[0]
-    all_sims_cum
     
     # show stats over each time period -----------------------------------------------------------------------------------
     
@@ -479,7 +490,7 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
 
     for col in all_sims_cum:
         new_portfolio = portfolio_cums[[col]].rename(columns={col:'port_value'})
-        stat_df.loc['Total Return',col] = period_return(new_portfolio)
+        # stat_df.loc['Total Return',col] = period_return(new_portfolio)
         stat_df.loc['Annualized Return',col] = annualized_return_monthly(new_portfolio)             # needs to be monthly
         stat_df.loc['Volatility',col] = annualized_volatility_monthly(new_portfolio)[0] # needs to be monthly
 #         stat_df.loc['Return/Risk Ratio',col] = stat_df.loc['Annualized Return', col] / stat_df.loc['Volatility', col]
@@ -496,7 +507,7 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
     # min, max, median stats,
     stat_df_summary = pd.DataFrame(columns=['median', 'min', 'max'])
 
-    var_list = ['Total Return', 'Annualized Return', 'Volatility', 'Max Drawdown', 'Ending Portfolio Value', 
+    var_list = ['Annualized Return', 'Volatility', 'Max Drawdown', 'Ending Portfolio Value', 
                'Surplus/Shortfall']
 
     for var in var_list:
@@ -509,7 +520,59 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
     
     # Return outputs for visualization ---------------------------------------------------------------------
 
-    return (success, stat_df_summary, total_dollars, stat_df, all_sims, money_df ) # all_holdings, init_port_stats)
+    return (success, stat_df_summary, total_dollars, stat_df, all_sims, all_sims_cum, money_df ) # all_holdings, init_port_stats)
+
+#---------------------------------------------------------------------------------------------------------------------------------------
+# Create Visualization functions
+def create_gauge(value):
+    # Define color ranges
+    if value <= 25:
+        color = 'red'
+    elif value <= 40:
+        color = 'orange'
+    elif value <= 60:
+        color = 'yellow'
+    elif value <= 80:
+        color = 'lightgreen'
+    else:
+        color = 'limegreen'
+
+    fig = go.Figure(go.Indicator(
+        domain = {'x': [0, 1], 'y': [0, 1]},
+        value = value,
+        mode = "gauge+number",
+        title = {'text': "Probability %"},
+        gauge = {'axis': {'range': [None, 100], 'tickvals': [0, 25, 50, 75, 100]},
+                 'bar': {'color': color},
+                 'steps' : [
+                     {'range': [0, 100], 'color': "white"}
+                 ]
+        },
+        number = {'font':{'color':'black'}}
+    ))
+    return fig
+
+def create_line_chart(total_dollars, goal):
+    # Calculate median
+    line_df = total_dollars.copy()
+    line_df['Median Portfolio Value'] = line_df.median(axis=1)
+
+    plt.figure(figsize=(10,6), tight_layout=True)
+
+    for col in line_df.columns:
+        color = 'lightgreen' if line_df[col][-1] >= goal else 'lightcoral'
+        if col == 'Median Portfolio Value':
+            color = 'black'
+        plt.plot(line_df.index, line_df[col], label=col, color=color)
+
+    plt.axhline(y=goal, color='gray', linestyle='--', label='Goal')
+
+    plt.xlabel('Date')
+    plt.ylabel('Portfolio Value ($)')
+    plt.title('Retirement Possibilities')
+    # plt.grid(True)
+
+    return plt
 
 # --------------------------------------------------------------------------------------------------------------------
 # Generate output from sim_retirement()
@@ -521,5 +584,14 @@ if st.button('Run Simulation'):
                             current_house_income=current_house_income, income_growth=income_growth, 
                             savings_rate=savings_rate, withdrawal_rate=withdrawal_rate,
                             lqd_windfall_dict = lqd_windfall_dict)
+    
+    st.title('Probability of Reaching Goal (%)')
+    fig = create_gauge(retire[0])
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.title('Path of Simulations')
+    line_chart = create_line_chart(retire[2], goal)
+    st.pyplot(line_chart)
+
     
                                                                                 
