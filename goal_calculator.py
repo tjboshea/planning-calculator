@@ -5,6 +5,8 @@ st.set_page_config(layout="wide")
 
 import pandas as pd
 import numpy as np
+import pickle
+import urllib.request
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -69,6 +71,26 @@ def get_factor_df():
     return factor_df
 
 factdb = get_factor_df()
+
+# ------------------------------------------------------------------------------------------------------
+# Read in Elastic Net Coefficients
+
+import urllib.request
+
+@st.cache_data
+def get_en_coefficients():
+    en_url = 'https://raw.githubusercontent.com/tjboshea/planning-calculator/main/data/en_coefficients.pkl'
+
+    # Fetch the pickle file content from the URL
+    response = urllib.request.urlopen(en_url)
+    
+    # Load the pickle file content
+    en_results = pickle.load(response)
+    
+    return en_results
+
+# Call the function to load the pickle data
+en_co = get_en_coefficients()
 
 
 # ------------------------------------------------------------------------------------------------------
@@ -181,7 +203,7 @@ st.sidebar.write(st.session_state.exp_df.set_index('Amount'))
 #---------------------------------------------------------------------------------------------------------
 # Function to run retirement simulations
 
-def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_dict, simulations=25, goal_years=15,
+def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_dict, simulations=1000, goal_years=15,
                    goal=5000000, current_savings=0, current_house_income=0,
                   income_growth=0.03, savings_rate=0.0, withdrawal_rate=0.0, lqd_windfall_dict = {1:0}):
     """
@@ -308,60 +330,12 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
         
     # Elastic Net Regression IMPLEMENATION ----------------------------------------------------------------------------
 
-    from pandas.tseries.offsets import MonthEnd
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.model_selection import GridSearchCV
-    from sklearn.linear_model import ElasticNet
-
     # initialize list of 
     all_preds = [pd.DataFrame() for i in range(simulations)]
     all_sims = pd.DataFrame()
 
     for asset in a_list:
     #     print(asset)
-        stock_monthly = df[[asset]].dropna() # iterate through each ticker, droping null rows
-        stock_monthly['eomonth'] = stock_monthly.index + MonthEnd(0) # add column with month end dates
-        stock_monthly = stock_monthly[(stock_monthly.index == stock_monthly['eomonth'])] # filter to only month end days
-
-        stock_ret = stock_monthly[asset].pct_change().dropna() 
-
-        factor_df = factdb.copy().dropna(how='any') # drop any null rows
-
-        # choose beginning date based on the later of first stock monthly return or factor row 7/31/1989
-        bgn_reg = stock_ret.index[0] if stock_ret.index[0] > factor_df.index[0] else factor_df.index[0]
-        end_reg = factor_df.index[-1] #pull end date of factor dataframe, factor dataframe should be updated quarterly
-
-
-        fact = factor_df.loc[bgn_reg:end_reg, :]
-
-        y = stock_ret.loc[bgn_reg:end_reg].values.ravel() # different than linear regression model
-        X = np.array(fact.iloc[:,:])
-
-        # create grid of parameters to test
-        param_grid = { 'alpha': [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 0.0, 1.0, 10.0, 100.0],
-                      'l1_ratio': np.arange(0,1,0.1)
-                     }
-
-        # create base model
-        en = ElasticNet(max_iter=10000)
-
-        # instantiate grid search model
-        grid_search = GridSearchCV(estimator = en,
-                                   param_grid = param_grid,
-                                   cv = 10,
-                                   n_jobs=-1)
-
-
-        # Fit the grid search model
-        grid_search.fit(X, y)
-
-        best_params = grid_search.best_params_
-
-        # fit EN with best params
-        best_en = ElasticNet(alpha=best_params['alpha'],
-                                        l1_ratio=best_params['l1_ratio'])
-        best_en.fit(X,y)
-
 
         for i in range(simulations):
     #         print("Simulation: ", i)
@@ -369,7 +343,7 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
             sim_months =  factor_simulations[i].copy()
 
             # predict return of asset class based on EN fit
-            pred_monthly = best_en.predict(sim_months)
+            pred_monthly = en_co[asset][0] + np.dot(sim_months, en_co[asset][1])
             pred_df = pd.DataFrame(pred_monthly, columns=[asset])
 
             # append each assets stream of returns to all preds list
@@ -639,9 +613,9 @@ if st.button('Run Simulation'):
                             savings_rate=savings_rate, withdrawal_rate=withdrawal_rate,
                             lqd_windfall_dict = lqd_windfall_dict)
     
-    st.write(retire[2])                                   # DELETE AFTER MAKING SURE WITHDRAWAL WORKS
-    st.write(retire[4])                                   # DELETE AFTER MAKING SURE WITHDRAWAL WORKS
-    st.write(retire[6])                                   # DELETE AFTER MAKING SURE WITHDRAWAL WORKS
+    # st.write(retire[2])                                   # DELETE AFTER MAKING SURE WITHDRAWAL WORKS
+    # st.write(retire[4])                                   # DELETE AFTER MAKING SURE WITHDRAWAL WORKS
+    # st.write(retire[6])                                   # DELETE AFTER MAKING SURE WITHDRAWAL WORKS
     
     st.title('Probability of Reaching Goal (%)')
     fig = create_gauge(retire[0])
@@ -661,3 +635,9 @@ if st.button('Run Simulation'):
     
     # TO DO: update withdrawals in retirement planner to a monthly expense number that has a growth rate for inflation
     # Add expense inflation
+    # add tabs, one for simulation outputs, add historgram of final dollar value outputs
+    # Add dataframe of median stats
+    # add tab for historical returns and growth of 1M
+    # Add tab for stress test
+    # Add tab for matrix of increments of all selections chosen in middle than two increments up or down on each side maxing an x by 5 matrix
+    # update format to look cools
