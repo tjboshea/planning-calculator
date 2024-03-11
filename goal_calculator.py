@@ -1,5 +1,8 @@
 import streamlit as st
 
+# Set the page layout to wide
+st.set_page_config(layout="wide")
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -41,16 +44,17 @@ except Exception as e:
     sys.exit(1)
 # ---------------------------------------------------------------------------------------------------------------
 # read in factors
-factor_url = 'https://raw.githubusercontent.com/tjboshea/planning-calculator/main/data/ScenarioFactors.csv'
 
-factor_df = pd.read_csv(factor_url)
-factor_df = factor_df.loc[~factor_df['date'].isnull()]
-factor_df['date'] = pd.to_datetime(factor_df['date'])
-factor_df = factor_df.loc[factor_df['date'] > "1949-12-29"]
-factor_df = factor_df.set_index('date')
+@st.cache_data 
+def get_factor_df():
+    factor_url = 'https://raw.githubusercontent.com/tjboshea/planning-calculator/main/data/ScenarioFactors.csv'
+    factor_df = pd.read_csv(factor_url)
+    factor_df = factor_df.loc[~factor_df['date'].isnull()]
+    factor_df['date'] = pd.to_datetime(factor_df['date'])
+    factor_df = factor_df.loc[factor_df['date'] > "1949-12-29"]
+    factor_df = factor_df.set_index('date')
 
-
-factors = ['us_credit', 'us_term', 'us_market', 'global_market',
+    factors = ['us_credit', 'us_term', 'us_market', 'global_market',
        'global_ex_us_market', 'europe_market', 'north_america_market',
        'pacific_market', 'us_SMB', 'global_SMB', 'global_ex_us_SMB',
        'europe_SMB', 'north_america_SMB', 'pacific_SMB', 'us_HML',
@@ -59,21 +63,29 @@ factors = ['us_credit', 'us_term', 'us_market', 'global_market',
        'north_america_UMD', 'pacific_UMD', 'us_QMJ', 'global_QMJ',
        'global_ex_us_QMJ', 'north_america_QMJ',
        'Commodity', 'EM']
+    
+    factor_df = factor_df.loc[:, factors]
 
-factdb = factor_df.loc[:, factors]
+    return factor_df
+
+factdb = get_factor_df()
 
 
 # ------------------------------------------------------------------------------------------------------
-# Read in index database
-idx_url = 'https://raw.githubusercontent.com/tjboshea/planning-calculator/main/data/index_db.csv'
+# Read in index 
 
-# Read the CSV file into a DataFrame
-df = pd.read_csv(idx_url)
-df['date'] = pd.to_datetime(df['date'])
-df = df.set_index('date')
+@st.cache_data
+def get_index_df():
+    idx_url = 'https://raw.githubusercontent.com/tjboshea/planning-calculator/main/data/index_db.csv'
 
-# Set the page layout to wide
-st.set_page_config(layout="wide")
+    # Read the CSV file into a DataFrame
+    data = pd.read_csv(idx_url)
+    data['date'] = pd.to_datetime(data['date'])
+    data = data.set_index('date')
+    return data
+
+df = get_index_df()
+
 
 # Initialize session state
 if 'exp_df' not in st.session_state:
@@ -127,17 +139,17 @@ goal_dict = st.session_state['alloc_df'].set_index('Asset')['Weight (%)'].to_dic
 st.sidebar.title("User inputs:")
 
 # determine if retirement is in growth or withdrawal stage
-save_or_withdraw = st.sidebar.selectbox('Planning Stage', ['Pre-retirement', 'Retirement'])
+stage = st.sidebar.selectbox('Planning Stage', ['Pre-retirement', 'Retirement'])
 
 goal_years = st.sidebar.number_input('Goal Years', min_value=1, step=1, value=15)
 goal = st.sidebar.number_input('Goal Amount', min_value=0, step=1, value=5000000)
 current_savings = st.sidebar.number_input('Current Savings', min_value=0, step=1, value=1250000)
 current_house_income = st.sidebar.number_input('Current House Income', min_value=0, step=1, value=100000)
-income_growth = st.sidebar.number_input('Income Growth Rate (%)', min_value=0.0, step=0.25, value=3.0, max_value=100.0)
-savings_rate = st.sidebar.slider('Savings Rate (%)', min_value=0.0, max_value=100.0, step=1.0, value=20.0)
+income_growth = st.sidebar.number_input('Income Growth Rate (%, Annual)', min_value=0.0, step=0.25, value=3.0, max_value=100.0)
+savings_rate = st.sidebar.slider('Savings Rate (%, Annual)', min_value=0.0, max_value=100.0, step=1.0, value=20.0)
 
-if save_or_withdraw == "Retirement":
-    withdrawal_rate = st.sidebar.slider('Withdrawal Rate (%)', min_value=0.0, max_value=100.0, step=1.0, value=1.0)
+if stage == "Retirement":
+    withdrawal_rate = st.sidebar.slider('Withdrawal Rate (%, Annual)', min_value=0.0, max_value=100.0, step=1.0, value=1.0)
 else:
     withdrawal_rate = 0
 
@@ -210,6 +222,7 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
         
     total_periods = goal_years * 12
     
+    # update withdrawl rate depending on stage
     withdrawal_rate = 0 if stage == 'pre-retirement' else withdrawal_rate
     
     # create index for simulation based on goal_years------------------------------------------------------
@@ -221,98 +234,8 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
     
     # Update goal_dict into friendly inputs-----------------------------------------------------------------
     goal_dict = {k:v/100 for k,v in goal_dict.items()}
-    goal_df = pd.DataFrame.from_dict(goal_dict, orient='index', columns =['weight'])
     a_list = [k for k in goal_dict.keys()]
     
-    # data calculations below allow for statistic calculations over different time frames
-    # last_date = df.index[-1]
-    # inc_date = find_inception(df, a_list)
-
-    # used to override inc_date or last date to earlier date
-    # inc_date = dt.strptime("2023-3-31", '%Y-%m-%d') # enter custom beginning date
-    # last_date = dt.strptime("2023-3-31", '%Y-%m-%d') # enter custom beginning date
-
-    # ytd = date(last_date.year-1, 12, 31)
-
-    # DATA CALCS COMMENTED OUT, UNCOMMENT OUT IF WE DECIDE TO SHOW HISTORICAL TIME PERIOD RETURNS
-    # Find dates, 10, 5, 3, and 1 year prior to last date in price dataframe
-#     ten_years = last_date - relativedelta(years=10)
-#     five_years = last_date - relativedelta(years=5)
-#     three_years = last_date - relativedelta(years=3)
-#     one_year = last_date - relativedelta(years=1)
-
-    # adjust dates above to most recent business day if original day falls on Saturday or Sunday
-#     ten_years = last_business_day(ten_years)
-#     five_years = last_business_day(five_years)
-#     three_years = last_business_day(three_years)
-#     one_year = last_business_day(one_year)
-
-    # filter dataframe to only relevant tickers, forward fill price data on weekends that didn't match on join
-    df = df.ffill()
-    
-    # HOLDINGS HISTORICAL STATS ------------------------------------------------------------------------------
-    # pull stats common period stats based on the latest starting inception date of all tickers
-
-#     # iterate through all time periods                  UNCOMMENT OUT WHEN WE WANT TO SHOW STATS AND HOLDINGS
-#     periods = [inc_date ]
-#     period_labels = ["Inception"]
-
-#     all_stats = []
-
-#     for a in a_list:
-#         print(a)
-#         for p, pl in zip(periods, period_labels):
-#             print(p)
-#             alloc_dict = {a:1}
-#             index_value = a
-#             check = round(sum([v for v in alloc_dict.values()]),2)
-
-#             new_portfolio = create_portfolio(df, p, last_date, alloc_dict, rebalance_freq="annual") # update this in loop for time period
-
-#             summary = pd.DataFrame({"Total Return":period_return(new_portfolio),
-#                                     "Annualized Return":annualized_return(new_portfolio),
-#                                "Annualized Volatility":annualized_volatility(new_portfolio)[0],
-#                                "Sharpe Ratio": calc_sharpe(df, new_portfolio),
-#                                "Return/Risk Ratio": calc_return_risk_ratio(new_portfolio),
-#                                "Beta": calc_beta(df, new_portfolio, p, last_date),
-#                                "Max Drawdown Peak": calc_max_drawdown(new_portfolio)[0],
-#                                "Max Drawdown Trough": calc_max_drawdown(new_portfolio)[1],
-#                                "Max Drawdown": calc_max_drawdown(new_portfolio)[2]},
-#                               index = [index_value]).T
-#             all_stats.append(summary)
-
-#     # concatenate all summary dataframes
-#     all_holdings = pd.concat(all_stats, axis=1).T  
-    
-#     # HISTORICAL PORTFOLIO STATS -----------------------------------------------------------
-#     bgn = inc_date
-#     end = last_date
-#     # Enter Custom Portfolio Name
-#     initial_name = 'Proposed Portfolio'
-
-#     check = round(sum([v for v in goal_dict.values()]),2)
-
-#     if check != 1:
-#         print("Portfolio Allocation does not sum to 100%")
-
-#     else:
-#         print("Check if allocation sums to 100%: ", check, check==1)
-
-#         new_portfolio = create_portfolio(df, bgn, end, goal_dict, rebalance_freq="annual", initial_investment=1)
-        
-#         time_series = new_portfolio.copy()
-
-#         # calc stats on core bonds
-#         summary = pd.DataFrame({"Total Return":period_return(new_portfolio),
-#                                 "Annualized Return":annualized_return(new_portfolio),
-#                                "Annualized Volatility":annualized_volatility(new_portfolio)[0],
-#                                "Return/Risk Ratio": calc_return_risk_ratio(new_portfolio),
-#                                "Max Drawdown Peak": calc_max_drawdown(new_portfolio)[0],
-#                                "Max Drawdown Trough": calc_max_drawdown(new_portfolio)[1],
-#                                "Max Drawdown": calc_max_drawdown(new_portfolio)[2]},
-#                               index = [initial_name]).T  
-        
-#         init_port_stats = summary.copy()
         
     # Create dataframe of cash flow growth-------------------------------------------------------------------
     money_idx = [i for i in range(1, total_periods+1)]
@@ -465,8 +388,7 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
     prev_index = start_date
     for row,idx in enumerate(total_dollars.index):
         if row == 0:
-            total_dollars.loc[idx,:] = (money_df.loc[row+1,['cash_flow']][0] - (withdrawal_rate * money_df.loc[row+1,['cash_flow']][0]) 
-                                       )* (1+all_sims.loc[idx,:])
+            total_dollars.loc[idx,:] = (money_df.loc[row+1,['cash_flow']][0] - (withdrawal_rate * money_df.loc[row+1,['cash_flow']][0]) )* (1+all_sims.loc[idx,:])
         else:
             total_dollars.loc[idx,:] =  (total_dollars.loc[prev_idx,:] + money_df.loc[row+1,['income']][0]
                                          + money_df.loc[row+1,['expense_or_windfall']][0] -
@@ -522,6 +444,105 @@ def sim_retirement(stage='Pre-retirement', df=df,factdb=factdb, goal_dict=goal_d
     # Return outputs for visualization ---------------------------------------------------------------------
 
     return (success, stat_df_summary, total_dollars, stat_df, all_sims, all_sims_cum, money_df ) # all_holdings, init_port_stats)
+
+#--------------------------------------------------------------------------------------------------------------------------------------
+# Create historical Stats function
+def history_stats(df, goal_dict):
+    # format inputs
+    goal_dict = {k:v/100 for k,v in goal_dict.items()}
+    a_list = [k for k in goal_dict.keys()]
+
+    # data calculations below allow for statistic calculations over different time frames
+    last_date = df.index[-1]
+    inc_date = find_inception(df, a_list)
+
+    # used to override inc_date or last date to earlier date
+    # inc_date = dt.strptime("2023-3-31", '%Y-%m-%d') # enter custom beginning date
+    # last_date = dt.strptime("2023-3-31", '%Y-%m-%d') # enter custom beginning date
+
+    ytd = date(last_date.year-1, 12, 31)
+
+    # DATA CALCS COMMENTED OUT, UNCOMMENT OUT IF WE DECIDE TO SHOW HISTORICAL TIME PERIOD RETURNS
+    # Find dates, 10, 5, 3, and 1 year prior to last date in price dataframe
+    ten_years = last_date - relativedelta(years=10)
+    five_years = last_date - relativedelta(years=5)
+    three_years = last_date - relativedelta(years=3)
+    one_year = last_date - relativedelta(years=1)
+
+    # adjust dates above to most recent business day if original day falls on Saturday or Sunday
+    ten_years = last_business_day(ten_years)
+    five_years = last_business_day(five_years)
+    three_years = last_business_day(three_years)
+    one_year = last_business_day(one_year)
+
+    # filter dataframe to only relevant tickers, forward fill price data on weekends that didn't match on join
+    df = df.ffill()
+    
+    # HOLDINGS HISTORICAL STATS ------------------------------------------------------------------------------
+    # pull stats common period stats based on the latest starting inception date of all tickers
+
+    # iterate through all time periods                  UNCOMMENT OUT WHEN WE WANT TO SHOW STATS AND HOLDINGS
+    periods = [inc_date ]
+    period_labels = ["Inception"]
+
+    all_stats = []
+
+    for a in a_list:
+        print(a)
+        for p, pl in zip(periods, period_labels):
+            print(p)
+            alloc_dict = {a:1}
+            index_value = a
+            check = round(sum([v for v in alloc_dict.values()]),2)
+
+            new_portfolio = create_portfolio(df, p, last_date, alloc_dict, rebalance_freq="annual") # update this in loop for time period
+
+            summary = pd.DataFrame({"Total Return":period_return(new_portfolio),
+                                    "Annualized Return":annualized_return(new_portfolio),
+                               "Annualized Volatility":annualized_volatility(new_portfolio)[0],
+                               "Sharpe Ratio": calc_sharpe(df, new_portfolio),
+                               "Return/Risk Ratio": calc_return_risk_ratio(new_portfolio),
+                               "Beta": calc_beta(df, new_portfolio, p, last_date),
+                               "Max Drawdown Peak": calc_max_drawdown(new_portfolio)[0],
+                               "Max Drawdown Trough": calc_max_drawdown(new_portfolio)[1],
+                               "Max Drawdown": calc_max_drawdown(new_portfolio)[2]},
+                              index = [index_value]).T
+            all_stats.append(summary)
+
+    # concatenate all summary dataframes
+    all_holdings = pd.concat(all_stats, axis=1).T  
+    
+    # HISTORICAL PORTFOLIO STATS -----------------------------------------------------------
+    bgn = inc_date
+    end = last_date
+    # Enter Custom Portfolio Name
+    initial_name = 'Proposed Portfolio'
+
+    check = round(sum([v for v in goal_dict.values()]),2)
+
+    if check != 1:
+        print("Portfolio Allocation does not sum to 100%")
+
+    else:
+        print("Check if allocation sums to 100%: ", check, check==1)
+
+        new_portfolio = create_portfolio(df, bgn, end, goal_dict, rebalance_freq="annual", initial_investment=1)
+        
+        time_series = new_portfolio.copy()
+
+        # calc stats on core bonds
+        summary = pd.DataFrame({"Total Return":period_return(new_portfolio),
+                                "Annualized Return":annualized_return(new_portfolio),
+                               "Annualized Volatility":annualized_volatility(new_portfolio)[0],
+                               "Return/Risk Ratio": calc_return_risk_ratio(new_portfolio),
+                               "Max Drawdown Peak": calc_max_drawdown(new_portfolio)[0],
+                               "Max Drawdown Trough": calc_max_drawdown(new_portfolio)[1],
+                               "Max Drawdown": calc_max_drawdown(new_portfolio)[2]},
+                              index = [initial_name]).T  
+        
+        init_port_stats = summary.copy()
+
+    return (all_holdings, init_port_stats)
 
 #---------------------------------------------------------------------------------------------------------------------------------------
 # Create Visualization functions
@@ -588,18 +609,22 @@ def create_line_chart(total_dollars, goal):
 
     return plt
 
-def plot_distribution(stat_df, stat, bin_num=15):
+def plot_distribution(stat_df, stat):
 
 
     plt.figure(figsize=(10,6), tight_layout=True)
 
     arr = stat_df.loc[stat,:].to_numpy() * 100
 
+    bins = np.arange(-100, 10, 10)
+
     fig, ax = plt.subplots()
-    ax.hist(arr, bins=bin_num)
+    ax.hist(arr, bins=bins)
 
     plt.xlabel('Max Drawdown (%)')
     plt.ylabel('# of Occurences')
+
+    plt.xticks(np.arange(-100, 10, 10))
 
     return fig
 
@@ -608,11 +633,15 @@ def plot_distribution(stat_df, stat, bin_num=15):
 
 if st.button('Run Simulation'):
 
-    retire = sim_retirement(stage='pre-retirement', df=df, factdb=factdb, goal_dict=goal_dict,
+    retire = sim_retirement(stage=stage, df=df, factdb=factdb, goal_dict=goal_dict,
                             goal_years=goal_years, goal=goal, current_savings=current_savings, 
                             current_house_income=current_house_income, income_growth=income_growth, 
                             savings_rate=savings_rate, withdrawal_rate=withdrawal_rate,
                             lqd_windfall_dict = lqd_windfall_dict)
+    
+    st.write(retire[2])                                   # DELETE AFTER MAKING SURE WITHDRAWAL WORKS
+    st.write(retire[4])                                   # DELETE AFTER MAKING SURE WITHDRAWAL WORKS
+    st.write(retire[6])                                   # DELETE AFTER MAKING SURE WITHDRAWAL WORKS
     
     st.title('Probability of Reaching Goal (%)')
     fig = create_gauge(retire[0])
@@ -623,6 +652,12 @@ if st.button('Run Simulation'):
     st.pyplot(line_chart)
 
     st.title('Distribution of Maximum Drawdowns')
-    dist_plot = plot_distribution(retire[3], 'Max Drawdown', bin_num=20)
+    dist_plot = plot_distribution(retire[3], 'Max Drawdown')
     st.pyplot(dist_plot, use_container_width=True)
                                                                                 
+
+
+                                                # CHECK WITHDRAWAL CALCULATIONS, STILL A PRETTY HIGH SUCCESS RATE WITH HIGH WITHDRAWAL %
+    
+    # TO DO: update withdrawals in retirement planner to a monthly expense number that has a growth rate for inflation
+    # Add expense inflation
